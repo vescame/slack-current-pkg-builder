@@ -1,0 +1,92 @@
+#!/bin/sh
+set -e
+
+log() {
+    _printf="`which printf`"
+    $_printf "%s\n" "$1"
+}
+
+verifyInstalled() {
+    local _prefix=/var/log/packages
+    local version=`grep '^VERSION' $1.info | cut -d'=' -f2 | tr -d '"'`
+    local prog=`grep '^PRGNAM' $1.info | cut -d'=' -f2 | tr -d '"'`
+
+    if [ -f "$_prefix/$prog-$version*_SBo" ]; then
+        return 1
+    fi
+
+    return 0
+}
+
+install() {
+    local _prefix=/tmp
+    local version=`grep '^VERSION' $1.info | cut -d'=' -f2 | tr -d '"'`
+    local prog=`grep '^PRGNAM' $1.info | cut -d'=' -f2 | tr -d '"'`
+    /sbin/installpkg "$_prefix/$prog-$version*_SBo*"
+}
+
+findDependencies() {
+    local _lpkgname="`basename $1`"
+
+    _deps="`grep "REQUIRES" $1/${_lpkgname}.info | cut -d '\"' -f2`"
+
+    # if has no deps, then return 0 and compile
+    if [ ! -z "$_deps" ]; then
+        log "Dependencies: $_deps"
+        for i in $_deps
+        do
+            _depspath="`find . -name "$i" -type d`"
+
+            if [ -z "$_depspath" ]; then
+                log "package not found: $i"
+                log "please, check manualy"
+                exit 1
+            else
+                tryBuild $_depspath
+            fi
+        done
+    fi
+
+    return 0
+}
+
+tryBuild() {
+    log "Trying to build: $1"
+    findDependencies $1
+    _hasdeps=$?
+    local _lpkgname="`basename $1`"
+    if [ $_hasdeps -eq 0 ]; then
+        cd $1
+        verifyInstalled $_lpkgname
+        if [ $? -eq 0 ]; then
+            local url="`grep '^DOWNLOAD' $_lpkgname.info | cut -d'=' -f2`"
+            url=`echo $url | tr -d '"' | grep 'tar.[x,g]z\|t[x,g]z'`
+            wget $url
+            sh -x $_lpkgname.SlackBuild
+            install $_lpkgname
+        fi
+        cd $cwd
+        return 0
+    else
+        log "Couldn't build: $1"
+        return 1
+    fi
+}
+
+if [ $# -ne 1 ]; then
+    log "usage: $0 package_relative_path"
+    exit 1
+fi
+
+if [ `id -u` -ne 0 ]; then
+    log "please, run as root"
+    exit 2
+fi
+
+_pkgname="`basename $1`"
+
+cwd="`dirname $(realpath $0)`"
+
+tryBuild $1
+
+# vim: et sw=4 ts=4 sts=4 ff=unix :
