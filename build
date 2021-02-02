@@ -85,7 +85,11 @@ fi
 
 _pkgname="`basename $1`"
 
-cwd="`dirname $(realpath $0)`"
+if [ -L "$0" ]; then
+    cwd="`realpath $(dirname $0)`"
+else
+    cwd="`dirname $(realpath $0)`"
+fi
 
 tryBuild $1
 
